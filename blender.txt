@@ -1,0 +1,33 @@
+import bpy
+import json
+import os
+
+path = os.path.expanduser("~/Desktop/rooms.json")
+
+rooms = []
+for obj in bpy.data.objects:
+    if obj.type != 'MESH':
+        continue
+    if not obj.name.startswith("room_"):
+        continue
+    
+    b = obj.bound_box
+    world = [obj.matrix_world @ __import__('mathutils').Vector(c) for c in b]
+    xs = [v.x for v in world]
+    ys = [v.y for v in world]
+    
+    rooms.append({
+        "id": obj.name,
+        "label": obj.name.replace("room_", "").replace("_", " ").title(),
+        "minX": round(min(xs), 2),
+        "maxX": round(max(xs), 2),
+        "minY": round(min(ys), 2),
+        "maxY": round(max(ys), 2),
+        "centreX": round(sum(xs)/len(xs), 2),
+        "centreY": round(sum(ys)/len(ys), 2),
+    })
+
+with open(path, "w") as f:
+    json.dump(rooms, f, indent=2)
+
+print(f"Exported {len(rooms)} rooms to {path}")

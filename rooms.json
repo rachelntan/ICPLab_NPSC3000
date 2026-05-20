@@ -1,0 +1,112 @@
+[
+  {
+    "id": "room_crux",
+    "label": "Crux",
+    "minX": 1510.52,
+    "maxX": 1776.8,
+    "minY": -1143.18,
+    "maxY": -797.09,
+    "centreX": 1643.66,
+    "centreY": -970.13
+  },
+  {
+    "id": "room_demo_area",
+    "label": "Demo Area",
+    "minX": 1513.03,
+    "maxX": 2020.4,
+    "minY": -2198.13,
+    "maxY": -1147.05,
+    "centreX": 1766.72,
+    "centreY": -1672.59
+  },
+  {
+    "id": "room_hallway_a",
+    "label": "Hallway A",
+    "minX": -90.67,
+    "maxX": 1509.84,
+    "minY": -2201.77,
+    "maxY": -1990.55,
+    "centreX": 709.58,
+    "centreY": -2096.16
+  },
+  {
+    "id": "room_hallways_b",
+    "label": "Hallways B",
+    "minX": 843.13,
+    "maxX": 1502.83,
+    "minY": -1367.88,
+    "maxY": -1151.87,
+    "centreX": 1172.98,
+    "centreY": -1259.87
+  },
+  {
+    "id": "room_hydra",
+    "label": "Hydra",
+    "minX": 1004.16,
+    "maxX": 1678.42,
+    "minY": -2523.18,
+    "maxY": -2210.29,
+    "centreX": 1341.29,
+    "centreY": -2366.73
+  },
+  {
+    "id": "room_intern_office_a",
+    "label": "Intern Office A",
+    "minX": 1787.73,
+    "maxX": 2578.38,
+    "minY": -1138.97,
+    "maxY": -497.41,
+    "centreX": 2183.05,
+    "centreY": -818.19
+  },
+  {
+    "id": "room_intern_office_b",
+    "label": "Intern Office B",
+    "minX": 1517.94,
+    "maxX": 1943.08,
+    "minY": -781.12,
+    "maxY": -500.47,
+    "centreX": 1730.51,
+    "centreY": -640.8
+  },
+  {
+    "id": "room_kitchen",
+    "label": "Kitchen",
+    "minX": 2036.22,
+    "maxX": 2576.06,
+    "minY": -2197.63,
+    "maxY": -1140.3,
+    "centreX": 2306.14,
+    "centreY": -1668.97
+  },
+  {
+    "id": "room_main_meeting_room",
+    "label": "Main Meeting Room",
+    "minX": 1688.85,
+    "maxX": 2575.89,
+    "minY": -2893.21,
+    "maxY": -2204.2,
+    "centreX": 2132.37,
+    "centreY": -2548.7
+  },
+  {
+    "id": "room_office",
+    "label": "Office",
+    "minX": -89.38,
+    "maxX": 994.46,
+    "minY": -2887.44,
+    "maxY": -2209.97,
+    "centreX": 452.54,
+    "centreY": -2548.7
+  },
+  {
+    "id": "room_pyxis",
+    "label": "Pyxis",
+    "minX": 1005.53,
+    "maxX": 1680.74,
+    "minY": -2890.01,
+    "maxY": -2540.47,
+    "centreX": 1343.14,
+    "centreY": -2715.24
+  }
+]

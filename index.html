@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Office Energy Map </title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #f8f8f5; font-family: sans-serif; overflow: hidden; }
+    #canvas-container { width: 100vw; height: 100vh; }
+
+    #ui {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.92);
+      border: 0.5px solid #ccc;
+      border-radius: 12px;
+      padding: 14px 24px;
+      display: flex; align-items: center; gap: 20px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      z-index: 10;
+    }
+    #time-label { font-size: 13px; font-weight: 500; color: #333; min-width: 120px; }
+    #time-slider { width: 260px; accent-color: #c0392b; }
+    button { font-size: 12px; padding: 6px 14px; border: 0.5px solid #ccc; border-radius: 6px; background: white; cursor: pointer; color: #333; }
+    button.active { background: #c0392b22; border-color: #c0392b; color: #c0392b; }
+
+    #legend {
+      position: fixed; top: 24px; right: 24px;
+      background: rgba(255,255,255,0.92);
+      border: 0.5px solid #ccc; border-radius: 10px;
+      padding: 14px 18px; font-size: 12px; color: #555;
+      z-index: 10; line-height: 2;
+    }
+    .leg-row { display: flex; align-items: center; gap: 8px; }
+    .leg-swatch { width: 12px; height: 12px; border-radius: 2px; }
+
+    #tooltip {
+      position: fixed; pointer-events: none;
+      background: rgba(255,255,255,0.95);
+      border: 0.5px solid #ccc; border-radius: 8px;
+      padding: 10px 14px; font-size: 12px; color: #333;
+      display: none; z-index: 20; line-height: 1.8;
+    }
+
+    #title {
+      position: fixed; top: 24px; left: 24px;
+      font-size: 15px; font-weight: 500; color: #333; z-index: 10;
+    }
+  </style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+<div id="title">Office Energy Map — Interconnected View</div>
+
+<div id="legend">
+  <div class="leg-row"><div class="leg-swatch" style="background:#c0392b"></div> High occupancy</div>
+  <div class="leg-row"><div class="leg-swatch" style="background:#2c3e50"></div> Empty</div>
+  <div class="leg-row"><div class="leg-swatch" style="background:#e67e22; height:2px; width:20px;"></div> High Energy Web</div>
+</div>
+
+<div id="ui">
+  <span id="time-label">Loading...</span>
+  <input type="range" id="time-slider" min="0" max="100" value="0">
+  <button id="play-btn" class="active">⏸ Pause</button>
+  <button id="speed-btn">1× speed</button>
+</div>
+
+<div id="tooltip"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.158.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.158.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+
+// ── scene setup ─────────────────────────────────────────────
+const container = document.getElementById('canvas-container');
+const W = window.innerWidth, H = window.innerHeight;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(W, H);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0xf8f8f5);
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+
+const aspect = W / H;
+const frustum = 2000;
+const camera = new THREE.OrthographicCamera(-frustum * aspect, frustum * aspect, frustum, -frustum, 0.1, 100000);
+
+const iso = Math.PI / 4;
+const tilt = Math.atan(1 / Math.sqrt(2));
+camera.position.set(Math.cos(iso) * 4000, Math.sin(tilt) * 4000, Math.sin(iso) * 4000);
+camera.lookAt(0, -100, 0);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.4);
+dirLight.position.set(2000, 3000, 2000);
+scene.add(dirLight);
+
+// ── Offset Controls (tweak these to align floor planes with OBJ) ──
+const FLOOR_OFFSET_X = 150;    // shift floor left(-) / right(+)
+const FLOOR_OFFSET_Y = 250; // shift floor down(-) / up(+)
+const FLOOR_OFFSET_Z = -300;    // shift floor forward(-) / back(+)
+
+// ── Web Spike Generation Logic ──────────────────────────────
+function createWebSpike(room, height, radius, normalized) {
+    const group = new THREE.Group();
+    
+    const pointCount = Math.floor(400 + (normalized * 1200)); 
+    const points = [];
+    const maxConnectDist = radius * 0.35; 
+
+    for (let i = 0; i < pointCount; i++) {
+        const t = Math.random();
+        const angle = Math.random() * Math.PI * 2;
+        const r = radius * Math.exp(-6 * t * t) * (1 - t) * Math.random();
+        const y = t * height;
+        
+        points.push(new THREE.Vector3(
+            room.centreX + FLOOR_OFFSET_X + Math.cos(angle) * r,
+            y + FLOOR_OFFSET_Y + 2,
+            -room.centreY + FLOOR_OFFSET_Z + Math.sin(angle) * r
+        ));
+    }
+
+    const lineVertices = [];
+    for (let i = 0; i < points.length; i++) {
+        for (let j = i + 1; j < points.length; j++) {
+            const dist = points[i].distanceTo(points[j]);
+            if (dist < maxConnectDist) {
+                lineVertices.push(points[i].x, points[i].y, points[i].z);
+                lineVertices.push(points[j].x, points[j].y, points[j].z);
+            }
+        }
+    }
+
+    const webGeo = new THREE.BufferGeometry();
+    webGeo.setAttribute('position', new THREE.Float32BufferAttribute(lineVertices, 3));
+    
+    const hue = 0.08 - normalized * 0.07;
+    const webMat = new THREE.LineBasicMaterial({
+        color: new THREE.Color().setHSL(hue, 1.0, 0.5),
+        transparent: true,
+        opacity: 0.15 + (normalized * 0.35),
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    });
+
+    group.add(new THREE.LineSegments(webGeo, webMat));
+
+    const spineGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(room.centreX + FLOOR_OFFSET_X, FLOOR_OFFSET_Y + 2,  -room.centreY + FLOOR_OFFSET_Z),
+        new THREE.Vector3(room.centreX + FLOOR_OFFSET_X, FLOOR_OFFSET_Y + height, -room.centreY + FLOOR_OFFSET_Z)
+    ]);
+    const spineMat = new THREE.LineBasicMaterial({ 
+        color: new THREE.Color().setHSL(hue, 1.0, 0.3),
+        transparent: true, opacity: 0.6 
+    });
+    group.add(new THREE.Line(spineGeo, spineMat));
+
+    group.userData = room;
+    return group;
+}
+
+// ── load OBJ & Data ──────────────────────────────────────────
+let frames = [];
+let spikes = new THREE.Group();
+let floorMeshes = {};
+scene.add(spikes);
+
+const objLoader = new OBJLoader();
+objLoader.load('ICP.obj', (obj) => {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xcccccc, transparent: true, opacity: 0.35, roughness: 1.0,
+  });
+  obj.traverse(child => {
+    if (child.isMesh) child.material = mat;
+  });
+  const box = new THREE.Box3().setFromObject(obj);
+  const centre = box.getCenter(new THREE.Vector3());
+  obj.position.set(-centre.x, -box.min.y, -centre.z);
+  scene.add(obj);
+});
+
+fetch('viz_data.json')
+  .then(r => r.json())
+  .then(data => {
+    frames = data;
+    document.getElementById('time-slider').max = frames.length - 1;
+    buildFloorZones(frames[0].rooms);
+    updateFrame(0);
+    animate();
+  });
+
+function buildFloorZones(rooms) {
+  rooms.forEach(room => {
+    const w = room.maxX - room.minX;
+    const h = room.maxY - room.minY;
+    const geo = new THREE.PlaneGeometry(w, h);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x2c3e50, transparent: true, opacity: 0.1, side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = Math.PI / 2;
+    mesh.position.set(room.centreX + FLOOR_OFFSET_X, FLOOR_OFFSET_Y, -room.centreY + FLOOR_OFFSET_Z);
+    mesh.userData = room;
+    scene.add(mesh);
+    floorMeshes[room.id] = mesh;
+  });
+}
+
+function updateFrame(index) {
+  const frame = frames[index];
+  if (!frame) return;
+
+  const ts = new Date(frame.timestamp);
+  document.getElementById('time-label').textContent = ts.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }) + ' — ' + ts.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric' });
+
+  while (spikes.children.length) spikes.remove(spikes.children[0]);
+
+  const maxEnergy = Math.max(...frame.rooms.map(r => r.energy), 0.001);
+
+  frame.rooms.forEach(room => {
+    const mesh = floorMeshes[room.id];
+    if (mesh) {
+      const occ = room.occupancy;
+      if (occ < 0.05) {
+        mesh.material.color.setHex(0x2c3e50);
+        mesh.material.opacity = 0.1;
+      } else {
+        mesh.material.color.setRGB(1, 0.2, 0.2);
+        mesh.material.opacity = 0.05 + occ * 0.25;
+      }
+    }
+
+    if (room.energy < 0.001) return;
+
+    const normalized = room.energy / maxEnergy;
+    const height = normalized * 1200 + 100;
+    const radius = Math.min(room.maxX - room.minX, Math.abs(room.maxY - room.minY)) * 0.25;
+
+    const webSpike = createWebSpike(room, height, radius, normalized);
+    spikes.add(webSpike);
+  });
+}
+
+// ── Core Loop & Controls ────────────────────────────────────
+let playing = true, frameIndex = 0, speed = 1, lastTick = 0;
+const INTERVAL = 300;
+
+function animate(ts = 0) {
+  requestAnimationFrame(animate);
+  if (playing && frames.length && ts - lastTick > INTERVAL / speed) {
+    frameIndex = (frameIndex + 1) % frames.length;
+    document.getElementById('time-slider').value = frameIndex;
+    updateFrame(frameIndex);
+    lastTick = ts;
+  }
+  renderer.render(scene, camera);
+}
+
+document.getElementById('play-btn').addEventListener('click', function() {
+  playing = !playing;
+  this.textContent = playing ? '⏸ Pause' : '▶ Play';
+  this.className = playing ? 'active' : '';
+});
+
+document.getElementById('speed-btn').addEventListener('click', function() {
+  const speeds = [1, 2, 4, 8];
+  speed = speeds[(speeds.indexOf(speed) + 1) % speeds.length];
+  this.textContent = `${speed}× speed`;
+});
+
+document.getElementById('time-slider').addEventListener('input', function() {
+  frameIndex = parseInt(this.value);
+  updateFrame(frameIndex);
+});
+
+// ── Raycasting for Tooltip ──────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const tooltip = document.getElementById('tooltip');
+
+window.addEventListener('mousemove', e => {
+  mouse.x = (e.clientX / W) * 2 - 1;
+  mouse.y = -(e.clientY / H) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects([...Object.values(floorMeshes), ...spikes.children], true);
+
+  if (hits.length > 0) {
+    const room = (hits[0].object.userData.id) ? hits[0].object.userData : hits[0].object.parent.userData;
+    tooltip.style.display = 'block';
+    tooltip.style.left = (e.clientX + 14) + 'px';
+    tooltip.style.top  = (e.clientY - 10) + 'px';
+    tooltip.innerHTML  = `<strong>${room.label}</strong><br>Occupancy: ${Math.round(room.occupancy * 100)}%<br>Energy: ${room.energy.toFixed(4)} kWh`;
+  } else { tooltip.style.display = 'none'; }
+});
+
+window.addEventListener('resize', () => {
+  const W = window.innerWidth, H = window.innerHeight;
+  renderer.setSize(W, H);
+  const aspect = W / H;
+  camera.left = -frustum * aspect; camera.right = frustum * aspect;
+  camera.updateProjectionMatrix();
+});
+</script>
+</body>
+</html>

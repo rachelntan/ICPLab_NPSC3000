@@ -1,0 +1,10 @@
+{
+  "sensor.coffee_machine_month_energy": "room_kitchen",
+  "sensor.milk_fridge_month_energy": "room_kitchen",
+  "sensor.main_fridge_month_energy": "room_kitchen",
+  "sensor.microwave_bottom_month_energy": "room_kitchen",
+  "sensor.brannigan_month_energy": "room_office",
+  "sensor.printer_month_energy": "room_hallways_b",
+  "sensor.hallway_monitor_month_energy": "room_hallway_a",
+  "sensor.meeting_room_monitor_right_month_energy": "room_main_meeting_room"
+}
