@@ -41,9 +41,10 @@ ENTITY_IDS = [
     "sensor.heating_water_current_power",   # <-- replace with your exact power entity_id
 ]
 
-# first download: "2026-07-11" - "2026-07-21"
-START_DATE = "2026-07-22"
-END_DATE = "2026-08-01"
+# first download: "2026-07-11" - "2026-08-01"
+# second download: "2026-08-02" - "2026-08-31"
+START_DATE = "2026-08-02"
+END_DATE = "2026-08-31"
 TZ = timezone.utc            # HA history API expects/returns UTC timestamps
 
 OUTPUT_DIR = Path("HeatingWater")   # matches your existing folder convention
