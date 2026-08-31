@@ -1,0 +1,151 @@
+---
+title: "SensitivityAnalysis"
+author: "Rachel Tan"
+date: "2026-07-20"
+output: html_document
+---
+
+```{r}
+library(data.table)
+library(readr)
+library(tidyr)
+library(dplyr)
+library(car) # Required for Type II ANOVA 
+
+# How much of the variation in energy usage can each predictor (Occupancy and Entrances) explain? 
+# Type1 Anova is sequential which will lead statistical conclusions to change depending on order variables are written in the code 
+# Type 2: Does this variable explain anything after accounting for all the other predictors? i.e. comparing energy ~ entrances, with energy ~ entrances + avg_occupancy
+```
+
+```{r}
+occupancy <- read_csv("OccupantData/OccupancyLog_05202026.csv")
+energy_wide <- read_csv("Analysis/ENERGY_20052026.csv")
+```
+
+```{r}
+# as energy_wide contains NA - only logs values for state changes, 
+# converts the lgl (all NA) columns to dbl NA, matching real numeric columns
+energy_long <- energy_wide %>%
+  mutate(across(-c(entity_id, type, unit), as.numeric)) %>%
+  pivot_longer( # pivot from wide to long; each timestamp column becomes row
+    cols = -c(entity_id, type, unit),
+    names_to = "timestamp",
+    values_to = "energy_value"
+  ) %>%
+  mutate(timestamp = as.POSIXct(timestamp, format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC"))
+
+# forward AND backward fill per entity to completely eliminate structural NAs
+energy_long <- energy_long %>%
+  arrange(entity_id, timestamp) %>%
+  group_by(entity_id) %>%
+  fill(energy_value, .direction = "downup") %>% 
+  ungroup()
+```
+
+```{r}
+energy_dt <- as.data.table(energy_long)
+occupancy_dt <- as.data.table(occupancy)
+
+# preserve original timestamps under new names before joining as join will overwrite/consume originals
+energy_dt[, energy_timestamp := timestamp]
+occupancy_dt[, occ_timestamp := timestamp_start]
+
+setkey(energy_dt, timestamp)
+setkey(occupancy_dt, timestamp_start)
+
+# as occupancy sensors record data in 1 minute intervals, while smart plugs record energy every 15 minutes; time stamps listed do not match 
+# forward-fill join / rolling join: if no exact match, use last known occupancy reading forward
+joined_data <- occupancy_dt[energy_dt, roll = TRUE, on = c("timestamp_start" = "timestamp")]
+
+# check match quality
+names(joined_data)
+```
+
+```{r}
+# time_diff states absolute time gap in minutes between energy reading and occupancy reading that got rolled onto it
+joined_data[, time_diff := abs(as.numeric(difftime(timestamp_start, energy_timestamp, units = "mins")))]
+
+sum(is.na(joined_data$avg_occupancy)) # how many energy rows failed to match any occupancy record at all 
+```
+
+```{r}
+joined_data_clean <- joined_data%>% 
+  filter(time_diff <= 60)  # keep only matches where occupancy is less than 60 minutes 
+```
+
+```{r}
+nrow(joined_data_clean)
+```
+
+```{r}
+nrow(joined_data)
+```
+
+```{r}
+# checking no remaining NAs 
+joined_data_clean %>%
+  group_by(entity_id) %>%
+  summarise(
+    n = n(),
+    n_energy_na = sum(is.na(energy_value)),
+    n_occ_na = sum(is.na(avg_occupancy))
+  )
+```
+
+```{r}
+# regression-based ANOVA decomposition
+
+# occupancy_sensitivity_pct — partial eta-squared for avg_occupancy, as a %. 
+  # "of this appliance's energy variance, what fraction is uniquely attributable to occupancy, after accounting for entrances."
+# standardized_slope — direction and relative strength, in standard-deviation units (not kWh). 
+    # Positive = energy increases when occupancy rises; negative = energy decreases when occupancy rises.
+# total_r_squared — how much of the appliance's total energy variance is explained by the whole model (occupancy + entrances together) 
+
+compute_sensitivity <- function(df) {
+  has_traffic_variation <- sd(df$entrances) > 0 # checks first whether entrances varies (not just 0 for whole data)
+
+  tryCatch({
+    # if entrances varies, fit a two-predictor model (avg_occupancy + entrances) and use Type II ANOVA to partition variances 
+    if (has_traffic_variation) {
+      fit <- lm(scale(energy_value) ~ scale(avg_occupancy) + scale(entrances), data = df) 
+        # standardizes each variable (mean0, sd1) before regression - allows to compare appliances with very different energy scales
+      anova_df <- as.data.frame(car::Anova(fit, type = "II"))
+    # if entrances doesn't vary, Type 1 anova()
+    } else {
+      fit <- lm(scale(energy_value) ~ scale(avg_occupancy), data = df)
+      anova_df <- as.data.frame(anova(fit))
+    }
+
+    ss_occupancy <- anova_df["scale(avg_occupancy)", "Sum Sq"]
+    ss_residuals <- anova_df["Residuals", "Sum Sq"]
+
+    tibble(
+      n = nrow(df),
+      occupancy_sensitivity_pct = (ss_occupancy / (ss_occupancy + ss_residuals)) * 100, # measures how sensitive energy is to occupancy once entrances are alr accounted for
+      standardized_slope        = coef(fit)[["scale(avg_occupancy)"]], # Energy = β0 + β1 × Occupancy, where β1 means if occupancy increases by 1 person, energy changes by β1 watts
+        # since occupancy standardised, z = x − μ / σ; 1 unit = 1 sd; where x = Occupancy, mu = average occupancy, sd = 2 people 
+      total_r_squared           = summary(fit)$r.squared
+    )
+  }, error = function(e) {
+    tibble(n = nrow(df), occupancy_sensitivity_pct = NA_real_,
+           standardized_slope = NA_real_, total_r_squared = NA_real_)
+  })
+}
+```
+
+```{r}
+sensitivity_global <- joined_data_clean %>%
+  filter(!is.na(energy_value), !is.na(avg_occupancy), !is.na(entrances)) %>%
+  group_by(entity_id) %>%
+  filter(n() >= 30, sd(energy_value) > 0, sd(avg_occupancy) > 0) %>% # filters out appliances where zero variance in energy or occupancy
+  group_modify(~ compute_sensitivity(.x)) %>%
+  ungroup() %>%
+  filter(!is.na(occupancy_sensitivity_pct)) %>%
+  arrange(desc(occupancy_sensitivity_pct))
+```
+
+```{r}
+print(sensitivity_global)
+# identify occupancy-sensitive appliances with: 
+# high occupancy_sensitivity_pct, positive standardized_slope, and a small total_r_squared − occupancy_sensitivity_pct/100 gap
+```
